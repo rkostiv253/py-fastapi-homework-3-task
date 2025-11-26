@@ -56,7 +56,7 @@ async def create_user(db: AsyncSession, user: UserRegisterRequestSchema):
     except Exception:
         await db.rollback()
         raise HTTPException(
-            status_code=401, detail="An error occured during user creation."
+            status_code=500, detail="An error occured during user creation."
         )
 
 
@@ -70,7 +70,7 @@ async def activate_user(db: AsyncSession, data: UserActivation):
         raise HTTPException(
             status_code=400, detail="Invalid or expired activation token."
         )
-    if token.expires_at < cast(datetime, token.expires_at).replace(tzinfo=timezone.utc):
+    if cast(datetime, token.expires_at).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         await db.delete(token)
         await db.commit()
         raise HTTPException(
@@ -124,11 +124,11 @@ async def reset_password_completion(db: AsyncSession, data: PasswordResetComplet
             raise HTTPException(
                 status_code=400, detail="Invalid email or token."
             )
-        if token.expires_at < datetime.now(timezone.utc):
+        if cast(datetime, token.expires_at).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
             await db.delete(token)
             await db.commit()
             raise HTTPException(
-                status_code=400, detail="Token has expired."
+                status_code=400, detail="Invalid email or token."
             )
         hashed = hash_password(data.password)
         user.password = hashed
@@ -193,13 +193,13 @@ async def access_token_refresh(
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token.")
     result = await db.execute(select(RefreshTokenModel).where(
-        RefreshTokenModel.token == data.token
+        RefreshTokenModel.token == data.refresh_token
     ).options(selectinload(RefreshTokenModel.user)))
     token = result.scalar_one_or_none()
     if token is None:
         raise HTTPException(status_code=401, detail="Refresh token not found.")
     user = token.user
-    if token.expires_at < datetime.now(timezone.utc):
+    if cast(datetime, token.expires_at).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         await db.delete(token)
         await db.commit()
         raise HTTPException(status_code=400, detail="Token has expired.")
