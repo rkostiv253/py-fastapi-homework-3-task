@@ -66,17 +66,19 @@ async def activate_user(db: AsyncSession, data: UserActivation):
     ).options(selectinload(ActivationTokenModel.user))
     )
     token = result.scalar_one_or_none()
-    if not token:
+    if token is None:
         raise HTTPException(
             status_code=400, detail="Invalid or expired activation token."
         )
+    user = token.user
+    if user.email != data.email:
+        raise HTTPException(status_code=400, detail="Invalid or expired activation token.")
     if cast(datetime, token.expires_at).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         await db.delete(token)
         await db.commit()
         raise HTTPException(
             status_code=400, detail="Invalid or expired activation token."
         )
-    user = token.user
     if user.is_active:
         await db.delete(token)
         await db.commit()
@@ -87,7 +89,7 @@ async def activate_user(db: AsyncSession, data: UserActivation):
     await db.delete(token)
     await db.commit()
     await db.refresh(user)
-    return {"message": "User account activated successfully"}
+    return {"message": "User account activated successfully."}
 
 
 async def reset_password_token(db: AsyncSession, data: PasswordResetToken):
@@ -191,13 +193,13 @@ async def access_token_refresh(
     try:
         jwt_manager.decode_refresh_token(data.refresh_token)
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid refresh token.")
+        raise HTTPException(status_code=400, detail="Invalid refresh token.")
     result = await db.execute(select(RefreshTokenModel).where(
         RefreshTokenModel.token == data.refresh_token
     ).options(selectinload(RefreshTokenModel.user)))
     token = result.scalar_one_or_none()
     if token is None:
-        raise HTTPException(status_code=401, detail="Refresh token not found.")
+        raise HTTPException(status_code=400, detail="Refresh token not found.")
     user = token.user
     if cast(datetime, token.expires_at).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         await db.delete(token)
