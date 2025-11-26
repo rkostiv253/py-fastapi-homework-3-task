@@ -5,7 +5,7 @@ from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, cast, delete
 from sqlalchemy.orm import selectinload
-from sqlalchemy.testing.pickleable import User
+from src.database.models.accounts import UserModel
 
 from src.config.settings import BaseAppSettings
 from src.database.models.accounts import (
@@ -21,8 +21,8 @@ from src.schemas.accounts import (
     PasswordResetCompletion,
     LoginRequestSchema,
     LoginRequestResponseSchema,
-    RefreshAccessResponseSchema,
-    UserRegisterResponseSchema
+    RefreshAccessRequestSchema,
+    UserRegisterResponseSchema,
 )
 from src.security.interfaces import JWTAuthManagerInterface
 from src.security.passwords import hash_password, verify_password
@@ -32,7 +32,7 @@ import secrets
 async def create_user(db: AsyncSession, user: UserRegisterRequestSchema):
     try:
         hashed = hash_password(user.password)
-        db_user = User(
+        db_user = UserModel(
             email=user.email,
             hashed_password=hashed,
             group=UserGroupEnum.USER
@@ -50,8 +50,8 @@ async def create_user(db: AsyncSession, user: UserRegisterRequestSchema):
         await db.commit()
         await db.refresh(db_user)
         return UserRegisterResponseSchema(
-            id=user.id,
-            email=user.email,
+            id=db_user.id,
+            email=db_user.email,
         )
     except Exception:
         await db.rollback()
@@ -70,7 +70,7 @@ async def activate_user(db: AsyncSession, data: UserActivation):
         raise HTTPException(
             status_code=400, detail="Invalid or expired activation token."
         )
-    if token.expires_at < datetime.now(timezone.utc):
+    if token.expires_at < cast(datetime, token.expires_at).replace(tzinfo=timezone.utc):
         await db.delete(token)
         await db.commit()
         raise HTTPException(
@@ -100,7 +100,7 @@ async def reset_password_token(db: AsyncSession, data: PasswordResetToken):
         )
         db.add(PasswordResetTokenModel(
             token=token,
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
             user_id=cast(int, user.id)
         )
         )
@@ -165,7 +165,7 @@ async def login_user(db: AsyncSession,
 
         refresh_token_instance = RefreshTokenModel(
             token=refresh_token,
-            expires_at=settings.LOGIN_TIME_DAYS,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.LOGIN_TIME_DAYS),
             user_id=cast(int, user.id)
         )
         db.add(refresh_token_instance)
@@ -185,7 +185,7 @@ async def login_user(db: AsyncSession,
 
 async def access_token_refresh(
         db: AsyncSession,
-        data: RefreshAccessResponseSchema,
+        data: RefreshAccessRequestSchema,
         jwt_manager: JWTAuthManagerInterface
 ):
     try:
@@ -196,9 +196,9 @@ async def access_token_refresh(
         RefreshTokenModel.token == data.token
     ).options(selectinload(RefreshTokenModel.user)))
     token = result.scalar_one_or_none()
-    user = token.user
-    if not token:
+    if token is None:
         raise HTTPException(status_code=401, detail="Refresh token not found.")
+    user = token.user
     if token.expires_at < datetime.now(timezone.utc):
         await db.delete(token)
         await db.commit()
@@ -212,5 +212,5 @@ async def access_token_refresh(
 
 
 async def get_user_by_email(db: AsyncSession, email: str):
-    result = await db.execute(select(User).where(User.email == email))
+    result = await db.execute(select(UserModel).where(UserModel.email == email))
     return result.scalar_one_or_none()

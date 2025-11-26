@@ -22,15 +22,16 @@ from src.database import (
     RefreshTokenModel
 )
 from exceptions import BaseSecurityError
+
 from src.schemas.accounts import (
-    UserRead,
     UserRegisterRequestSchema,
     UserRegisterResponseSchema,
     UserActivation,
     PasswordResetToken,
     LoginRequestSchema,
     LoginRequestResponseSchema,
-    PasswordResetCompletion, RefreshAccessResponseSchema
+    PasswordResetCompletion,
+    RefreshAccessResponseSchema, RefreshAccessRequestSchema
 )
 from src.security.interfaces import JWTAuthManagerInterface
 
@@ -70,9 +71,9 @@ async def login(db: AsyncSession,
     return await login_user(db, data, jwt_manager, settings)
 
 
-@router.post("/login/", response_model=RefreshAccessResponseSchema)
+@router.post("/api/v1/accounts/refresh/", response_model=RefreshAccessResponseSchema)
 async def refresh_access(db: AsyncSession,
-                         data: LoginRequestSchema,
+                         data: RefreshAccessRequestSchema,
                          jwt_manager: JWTAuthManagerInterface = Depends(get_jwt_auth_manager)
                          ):
     return await access_token_refresh(db, data, jwt_manager)

@@ -8,8 +8,8 @@ class UserBase(BaseModel):
 
 
 class UserRegisterRequestSchema(UserBase):
-    id: int
     email: EmailStr
+    password: str
 
 
 class UserRegisterResponseSchema(UserBase):
